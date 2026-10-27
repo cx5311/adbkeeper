@@ -15,11 +15,12 @@
 
 **https://github.com/cx5311/adbkeeper/releases/latest**
 
-当前版本 **v1.2**，`versionCode 3`，APK 约 16 KB。
+当前版本 **v1.4**，`versionCode 5`，APK 约 17 KB。
 
 | 版本 | 说明 |
 |---|---|
-| v1.2 | 修首装激活失效、Job 联网约束、增加 adbd 监听探测、minSdk 降到 19 |
+| v1.4 | 增加 2 分钟快速通道（实测恢复 202 秒）、adbd 判据改用 `init.svc.adbd` 并去掉 INTERNET 权限 |
+| v1.2 | 修首装激活失效、Job 联网约束、minSdk 降到 19 |
 | v1.1 | 修老系统崩溃、首装不激活、状态页布局 |
 | v1.0 | 首个版本 |
 
@@ -43,7 +44,7 @@
 判据有两层：
 
 1. `Settings.Global.ADB_ENABLED != 1` → 写回 `1`（写之前顺带确保"开发者选项"总开关是开的，部分 ROM 会因此忽略 `adb_enabled`）
-2. 值已经是 1，但 `127.0.0.1:<adb 端口>` 连不上 → 说明 adbd 进程没了而设置值还在，做一次 `0 → 1` 翻转把 adbd 拉起来（连续 2 次探测失败才动手，避免偶发抖动误伤正在用的连接）
+2. 值已经是 1，但 `init.svc.adbd` 不是 `running` → 说明 adbd 进程没了而设置值还在，做一次 `0 → 1` 翻转把 adbd 拉起来（连续 2 次判定失败才动手，避免偶发抖动误伤正在用的连接）
 
 为什么这就够了：
 
@@ -51,7 +52,7 @@
 |---|---|
 | `adb_enabled` 是持久设置 | 写一次就一直有效，不必每次开机都成功 |
 | `adbd` 在 system_server 侧 | 桌面应用崩溃 / 黑屏，都不影响 ADB 守护进程 |
-| 端口由 `persist.adb.tcp.port` 决定 | 电视通常是固定的 `5555`，与开关无关；本应用会读这个值来决定探测哪个端口 |
+| 端口由 `persist.adb.tcp.port` 决定 | 电视通常是固定的 `5555`，与开关无关；状态页会读这个值显示 |
 | `0 → 1` 翻转能重启 adbd | `adb_enabled` 由 system_server 监听，写 0 停、写 1 拉起 |
 
 **与手机的差异**（参考 [Jocala/wifiadb](https://github.com/Jocala/wifiadb) 的分析）：手机 Android 11+ 的"无线调试"走 `adb_wifi_enabled` + 随机 TLS 端口，普通应用写不了，只能靠无障碍服务点快捷磁贴；而电视/盒子走传统 `adb_enabled` + 固定端口，`WRITE_SECURE_SETTINGS` 直接可写，**不需要无障碍**。
@@ -61,18 +62,18 @@
 | 设计 | 原因 |
 |---|---|
 | **无桌面图标**（不加 `LAUNCHER` category） | 不占磁贴、不会被误点；需要时用 `am start` 打开状态页 |
-| **无常驻服务、无轮询线程** | 只在系统广播 / JobScheduler 触发时被拉起几十毫秒 |
-| **多重触发** | `LOCKED_BOOT_COMPLETED`（解锁前最早）+ `BOOT_COMPLETED` + `MY_PACKAGE_REPLACED` + 15 分钟周期 Job（无网络约束、跨重启持久） |
-| **双重判据** | 不只看设置值，还探测 adbd 是否真的在监听 |
+| **无常驻服务、无轮询线程** | 只在广播 / Alarm / Job 触发时被拉起几十毫秒 |
+| **双通道巡检** | 2 分钟 Alarm（`ELAPSED_REALTIME`，不唤醒设备）+ 15 分钟 Job（跨重启持久，兜底）；开机 / 升级另有即时触发 |
+| **双重判据** | 不只看设置值，还检查 adbd 进程是不是真的在跑 |
 | **零第三方依赖** | 纯 Java + 系统 API，APK 约 16 KB |
-| **只在需要时写设置** | 已经是 1 且端口正常就什么都不做，避免无意义的设置变更 |
+| **只在需要时写设置** | 已经是 1 且 adbd 正常就什么都不做，避免无意义的设置变更 |
 
 ## 安装
 
 ### 全新安装
 
 ```bash
-adb install adbkeeper-1.2.apk
+adb install adbkeeper-1.4.apk
 
 # 关键：授予签名级权限（安装时无法自动获得）
 adb shell pm grant com.cx531.adbkeep android.permission.WRITE_SECURE_SETTINGS
@@ -93,7 +94,7 @@ adb shell am start -n com.cx531.adbkeep/.StatusActivity
 ### 从旧版升级
 
 ```bash
-adb install -r adbkeeper-1.2.apk
+adb install -r adbkeeper-1.4.apk
 ```
 
 覆盖安装会保留已授予的 `WRITE_SECURE_SETTINGS`，并自动触发 `MY_PACKAGE_REPLACED` 完成激活，**无需重新 grant**。
@@ -142,6 +143,8 @@ adb logcat -s AdbKeeper
 - **它会强制打开 ADB。** 你手动关掉，它会在下一个周期（通常 15 分钟内）改回来。想彻底关闭：状态页停用总开关，或 `adb shell pm disable-user com.cx531.adbkeep`（恢复用 `adb shell pm enable com.cx531.adbkeep`），彻底不要了就 `adb uninstall com.cx531.adbkeep`。
 - **15 分钟是"尽力而为"。** 电视进入待机（Doze）后系统会放宽周期任务的调度，实际间隔可能是几十分钟到几小时。开机、解锁、升级这几个触发点是准时的。
 - **Android 4.4 / 4.4W 没有周期任务。** `JobScheduler` 是 API 21 才有的，这些设备上本应用只在**开机**和**升级**时检查一次，运行中被清零不会自动补。5.0 及以上功能完整。
+- **部分国产电视（实测小米）不允许第三方应用自启动。** MiTV-MFFU0 / Android 14 实测三种封杀：待机时 force-stop 非桌面类应用；开机时把第三方应用标记为 `stopped`（连 `BOOT_COMPLETED` 都不投递）；系统里没有自启动白名单可加，Doze 白名单同样拦不住。处于 `stopped` 状态时闹钟被清空、广播收不到、Job 不执行。结果是：**它只在被激活之后、且没被待机或关机停掉的时间窗口内有效**。断电重启后 ADB 若还能用，那是 ROM 自己把 `adb_enabled` 恢复成了 1，与本应用无关。
+- **没有图标意味着只能靠 ADB 唤醒它。** 这是有意的设计取舍（不占磁贴），代价是 ADB 断掉后无法在电视上手动打开。如果你的使用场景里这一点是硬需求，在 `AndroidManifest.xml` 里给 `StatusActivity` 加一个 `LEANBACK_LAUNCHER` intent-filter 即可：它只出现在 Android TV 的应用列表里，手机桌面仍不显示。
 - **网络断了救不了。** ADB over TCP 依赖设备联网，WiFi 密码变更 / 路由器故障属于物理层问题。
 - **不解决 `system_server` 崩溃。** 那种情况 `adbd` 本身不存在。
 - **不修改 ADB 端口。** 依赖设备原本就能在 `persist.adb.tcp.port` 指定的端口上监听。如果 `getprop persist.adb.tcp.port` 是空的，说明设备压根没开网络调试端口（只有 USB）——先用 USB 连上执行 `adb shell setprop persist.adb.tcp.port 5555` 再重启，本应用不会替你改这个值，也不会在端口未配置时自动重启 adbd（避免误伤 USB 调试）。
@@ -154,9 +157,6 @@ adb logcat -s AdbKeeper
 
 **Q：为什么不像手机那样用无障碍权限？**
 不需要。电视/盒子走传统 `adb_enabled`，`WRITE_SECURE_SETTINGS` 就能直接写；无障碍是手机无线调试（system API 写不了）才被迫采用的手段。少一个无障碍权限，少一份隐私面。
-
-**Q：为什么要 `INTERNET` 权限？**
-只用来探测 `127.0.0.1` 上的 adbd 是否在监听（本地回环 socket，超时 400ms）。代码里没有任何访问外网的行为——没有 HTTP 客户端、没有连接外部地址。Android 上创建 socket 需要这个权限，本地连接也不例外。
 
 **Q：装完没重启，是不是就不生效了？**
 执行一次 `adb shell am start -n com.cx531.adbkeep/.StatusActivity` 就生效了，它会立即检查并排期周期任务，不需要重启。

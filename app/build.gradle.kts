@@ -12,8 +12,8 @@ android {
         // 周期任务依赖 JobScheduler（API 21+），4.4/4.4W 上自动跳过，不会崩溃。
         minSdk = 19
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 5
+        versionName = "1.4"
     }
 
     buildTypes {

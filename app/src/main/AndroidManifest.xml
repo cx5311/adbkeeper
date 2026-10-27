@@ -10,9 +10,6 @@
     <!-- 签名级权限，安装后需 adb grant 一次:
          adb shell pm grant com.cx531.adbkeep android.permission.WRITE_SECURE_SETTINGS -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
-    <!-- 只用于探测 127.0.0.1 上 adbd 是否在监听（本地回环 socket），
-         代码中没有任何访问外网的行为。 -->
-    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="false"
@@ -38,8 +35,14 @@
             </intent-filter>
         </receiver>
 
+        <!-- 2 分钟快速通道：AlarmManager ELAPSED_REALTIME（不唤醒设备）。
+             显式 Intent 指定组件，所以不受 Android 8 隐式广播限制。 -->
+        <receiver
+            android:name=".FastAlarmReceiver"
+            android:exported="false" />
+
         <!-- 周期兜底：15 分钟一次，无网络约束（覆盖 ROM 中途清零的情况）。
-             仅 Android 5.0+ 生效，4.4 设备没有 JobScheduler，只会走开机广播。 -->
+             仅 Android 5.0+ 生效，4.4 设备没有 JobScheduler，靠上面的 alarm 通道。 -->
         <service
             android:name=".KeepJobService"
             android:exported="false"

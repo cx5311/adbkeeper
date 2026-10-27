@@ -29,6 +29,8 @@ public class BootReceiver extends BroadcastReceiver {
         Log.i(TAG, "boot trigger: " + action);
 
         Keeper.ensure(context, "boot(" + action + ")");
+        // 快速通道：所有版本都能用，2 分钟一次
+        FastAlarmReceiver.schedule(context);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             KeepJobService.schedule(context);
         }

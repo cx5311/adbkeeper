@@ -56,7 +56,7 @@ public class StatusActivity extends Activity {
         kick.setText("强制重启 ADB");
         kick.setOnClickListener(v -> {
             Keeper.kickAdbd(this);
-            render(Keeper.adbdListening() ? "已重启，端口已在监听" : "已执行重启，端口仍未监听");
+            render(Keeper.adbdState() == 1 ? "已重启，adbd 正在运行" : "已执行重启，adbd 仍异常");
         });
         root.addView(kick, new LinearLayout.LayoutParams(wrap, wrap));
 
@@ -73,6 +73,7 @@ public class StatusActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         Keeper.ensure(this, "ui");
+        FastAlarmReceiver.schedule(this);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             KeepJobService.schedule(this);
         }
@@ -81,7 +82,8 @@ public class StatusActivity extends Activity {
 
     private void render(String note) {
         int adb = Keeper.adbEnabled(this);
-        boolean listening = Keeper.adbdListening();
+        int state = Keeper.adbdState();
+        String raw = Keeper.adbdStateRaw();
         StringBuilder sb = new StringBuilder();
         if (note != null) {
             sb.append("▶ ").append(note).append("\n\n");
@@ -91,11 +93,11 @@ public class StatusActivity extends Activity {
                 .append("\n");
         sb.append("adb_enabled: ").append(adb == 1 ? "1（开）" : adb == 0 ? "0（关）" : "读取失败")
                 .append("\n");
-        sb.append("adbd 监听 127.0.0.1:").append(Keeper.adbPort()).append(": ")
-                .append(listening ? "是" : "否").append("\n");
-        if (!Keeper.tcpPortConfigured()) {
-            sb.append("（未配置 persist.adb.tcp.port，可能只在 USB 上监听，不会自动重启）\n");
-        }
+        sb.append("adbd 进程: ")
+                .append(state == 1 ? "running" : state == 0 ? "未运行" : "读不到")
+                .append(raw == null || raw.isEmpty() ? "" : "（init.svc.adbd=" + raw + "）")
+                .append("\n");
+        sb.append("ADB 端口: ").append(Keeper.adbPort()).append("\n");
         sb.append("自动恢复: ").append(Keeper.isEnabled(this) ? "启用" : "停用").append("\n");
         sb.append("最近检查: ").append(Keeper.lastRun(this)).append("\n");
         sb.append("最近修复: ").append(Keeper.lastChange(this)).append("\n");

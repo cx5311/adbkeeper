@@ -8,8 +8,8 @@ import android.os.Build;
 import android.provider.Settings;
 import android.util.Log;
 
-import java.net.InetSocketAddress;
-import java.net.Socket;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 
 /**
  * 唯一的功能实现：把 Settings.Global.ADB_ENABLED 保持在 1，并确认 adbd 真的在监听。
@@ -32,9 +32,8 @@ public final class Keeper {
     private static final String KEY_LAST_CHANGE = "last_change";
     private static final String KEY_MISS = "miss";
 
-    /** 连续这么多次遇到"值是 1 但端口不通"才动手重启 adbd，避免偶发抖动误伤正常连接。 */
+    /** 连续这么多次遇到"值是 1 但 adbd 不在跑"才动手重启，避免偶发抖动误伤正常连接。 */
     private static final int MISS_THRESHOLD = 2;
-    private static final int PROBE_TIMEOUT_MS = 400;
     private static final int DEFAULT_PORT = 5555;
 
     private Keeper() {
@@ -106,20 +105,6 @@ public final class Keeper {
         return DEFAULT_PORT;
     }
 
-    /**
-     * 设备是否真的配了 ADB TCP 端口。
-     * 明确读到空/0/-1 说明只在 USB 上监听，那就不该去重启 adbd；
-     * 读不到（反射被限制）时按"本项目的前提：本来就是网络 ADB"处理，返回 true。
-     */
-    public static boolean tcpPortConfigured() {
-        String v = sysProp("persist.adb.tcp.port");
-        if (v == null) {
-            return true;
-        }
-        String s = v.trim();
-        return !s.isEmpty() && !"0".equals(s) && !"-1".equals(s);
-    }
-
     /** 读系统属性。SystemProperties 是隐藏 API，反射失败就当读不到。 */
     private static String sysProp(String key) {
         try {
@@ -130,27 +115,51 @@ public final class Keeper {
         }
     }
 
-    /**
-     * 探测 adbd 是否在本地 TCP 端口上监听。
-     * 只连 127.0.0.1，不发任何数据、不访问外网；超时 400ms。
-     */
-    public static boolean adbdListening() {
-        Socket s = null;
+    /** 反射读不到时退回执行 getprop。 */
+    private static String execGetprop(String key) {
+        BufferedReader r = null;
         try {
-            s = new Socket();
-            s.connect(new InetSocketAddress("127.0.0.1", adbPort()), PROBE_TIMEOUT_MS);
-            return true;
+            Process p = Runtime.getRuntime().exec(new String[]{"getprop", key});
+            r = new BufferedReader(new InputStreamReader(p.getInputStream()));
+            String line = r.readLine();
+            return line == null ? "" : line;
         } catch (Throwable t) {
-            return false;
+            return null;
         } finally {
-            if (s != null) {
+            if (r != null) {
                 try {
-                    s.close();
+                    r.close();
                 } catch (Throwable ignored) {
                     // 关闭失败无所谓
                 }
             }
         }
+    }
+
+    /**
+     * adbd 到底活着没有：1 = running，0 = 明确没在跑，-1 = 读不到（不猜）。
+     *
+     * 为什么不用"连 127.0.0.1:端口"来判断：
+     * 实测小米电视（MiTV-MFFU0 / Android 14）的 adbd 监听在 IPv6 通配地址 [::]:5555，
+     * IPv4 的 127.0.0.1 探测一直失败，于是"设置值正常但探测不通"被误判成 adbd 挂了，
+     * 白白触发一次 0→1 重启（真机上已复现）。
+     * init.svc.adbd 由 init 维护，直接反映进程状态，判断更准。
+     */
+    public static int adbdState() {
+        String v = adbdStateRaw();
+        if (v == null || v.isEmpty()) {
+            return -1;
+        }
+        return "running".equals(v) ? 1 : 0;
+    }
+
+    /** init.svc.adbd 的原始值，供状态页展示；读不到返回 null。 */
+    public static String adbdStateRaw() {
+        String v = sysProp("init.svc.adbd");
+        if (v == null || v.trim().isEmpty()) {
+            v = execGetprop("init.svc.adbd");
+        }
+        return v == null ? null : v.trim();
     }
 
     /**
@@ -178,22 +187,25 @@ public final class Keeper {
             return writeOn(c, p, reason);
         }
 
-        // 值已经是 1：再确认 adbd 真的在听。某些 ROM 会杀掉 adbd 却保留设置值，
+        // 值已经是 1：再确认 adbd 进程真的在。某些 ROM 会杀掉 adbd 却保留设置值，
         // 那种情况下只看设置会一直以为"一切正常"，永远不动作。
-        if (!tcpPortConfigured()) {
-            return false;   // 设备只在 USB 上开 adb，不干预
-        }
-        if (adbdListening()) {
+        int state = adbdState();
+        if (state == 1) {
             if (p.getInt(KEY_MISS, 0) != 0) {
                 p.edit().putInt(KEY_MISS, 0).apply();
             }
             return false;
         }
+        if (state < 0) {
+            // 读不到 adbd 状态就不猜，宁可不动手，也不要反复重启一个好端端的 adbd
+            Log.w(TAG, reason + ": adb_enabled=1 but init.svc.adbd unreadable, skip");
+            return false;
+        }
 
         int miss = p.getInt(KEY_MISS, 0) + 1;
         p.edit().putInt(KEY_MISS, miss).apply();
-        Log.w(TAG, reason + ": adb_enabled=1 but 127.0.0.1:" + adbPort()
-                + " closed (" + miss + "/" + MISS_THRESHOLD + ")");
+        Log.w(TAG, reason + ": adb_enabled=1 but adbd is not running ("
+                + miss + "/" + MISS_THRESHOLD + ")");
         if (miss >= MISS_THRESHOLD) {
             p.edit().putInt(KEY_MISS, 0).apply();
             return kickAdbd(c);
