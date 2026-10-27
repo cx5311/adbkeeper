@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ADB Keeper —— 独立进程的 ADB 开关保活器
+  目的：即使 Aerial 崩溃 / 桌面黑屏，也能保证 adb_enabled 长期为 1，方便远程救砖。
+  设计：无桌面图标、无常驻服务、无轮询线程；只由系统广播与 JobScheduler 短暂拉起。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 签名级权限，安装后需 adb grant 一次:
+         adb shell pm grant com.cx531.adbkeep android.permission.WRITE_SECURE_SETTINGS -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+
+    <application
+        android:allowBackup="false"
+        android:directBootAware="true"
+        android:label="@string/app_name"
+        android:supportsRtl="false">
+
+        <!-- 开机触发：解锁前(LOCKED) + 解锁后 + 覆盖安装后 -->
+        <receiver
+            android:name=".BootReceiver"
+            android:directBootAware="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 周期兜底：15 分钟一次，联网后才跑（覆盖 ROM 中途清零的情况） -->
+        <service
+            android:name=".KeepJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- 状态页：故意不加 LAUNCHER category，桌面不显示，只能 adb am start 打开 -->
+        <activity
+            android:name=".StatusActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@android:style/Theme.DeviceDefault" />
+    </application>
+</manifest>
