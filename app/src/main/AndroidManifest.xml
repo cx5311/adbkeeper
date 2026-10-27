@@ -10,6 +10,9 @@
     <!-- 签名级权限，安装后需 adb grant 一次:
          adb shell pm grant com.cx531.adbkeep android.permission.WRITE_SECURE_SETTINGS -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+    <!-- 只用于探测 127.0.0.1 上 adbd 是否在监听（本地回环 socket），
+         代码中没有任何访问外网的行为。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="false"
@@ -26,13 +29,17 @@
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-                <!-- 显式激活入口：首次安装后系统不会发任何广播给我们，用这条手动激活。
-                     adb shell am broadcast -a com.cx531.adbkeep.PING -->
+                <!-- 手动激活入口。注意两条系统限制：
+                     1) Android 8+ 静态注册的 receiver 收不到隐式广播，必须显式指定组件；
+                     2) 首次安装的包处于 stopped 状态，默认被排除在广播之外，
+                        需要给 am broadcast 加上 include-stopped-packages 参数。
+                     所以推荐直接用 am start 打开状态页来激活（见 README）。 -->
                 <action android:name="com.cx531.adbkeep.PING" />
             </intent-filter>
         </receiver>
 
-        <!-- 周期兜底：15 分钟一次，联网后才跑（覆盖 ROM 中途清零的情况） -->
+        <!-- 周期兜底：15 分钟一次，无网络约束（覆盖 ROM 中途清零的情况）。
+             仅 Android 5.0+ 生效，4.4 设备没有 JobScheduler，只会走开机广播。 -->
         <service
             android:name=".KeepJobService"
             android:exported="false"

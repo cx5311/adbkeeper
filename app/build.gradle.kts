@@ -8,10 +8,12 @@ android {
 
     defaultConfig {
         applicationId = "com.cx531.adbkeep"
-        minSdk = 21
+        // 覆盖到 Android 4.4：装得上、开机能恢复即可。
+        // 周期任务依赖 JobScheduler（API 21+），4.4/4.4W 上自动跳过，不会崩溃。
+        minSdk = 19
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
     }
 
     buildTypes {

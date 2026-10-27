@@ -6,14 +6,18 @@ import android.app.job.JobScheduler;
 import android.app.job.JobService;
 import android.content.ComponentName;
 import android.content.Context;
+import android.os.Build;
 import android.util.Log;
 
 /**
- * 周期兜底：每 15 分钟（系统允许的最小周期）检查一次，仅在联网时执行。
+ * 周期兜底：每 15 分钟（系统允许的最小周期）检查一次。
  *
  * 为什么要周期任务：某些 ROM 会在运行过程中把 adb_enabled 清零（例如待机/唤醒流程），
  * 而那时如果 Aerial 恰好崩了，就没人补。这个任务由系统调度、跨重启持久（setPersisted），
- * 执行时只读一个 int，开销可以忽略。
+ * 执行时只读一个 int、加一次本地端口探测，开销可以忽略。
+ *
+ * 只在 Android 5.0+ 上排期：JobScheduler 是 API 21 才有的，4.4 上连类都不存在，
+ * 由调用方（BootReceiver / StatusActivity）用 SDK_INT 挡住，不要直接加载本类。
  */
 public class KeepJobService extends JobService {
 
@@ -33,8 +37,11 @@ public class KeepJobService extends JobService {
         return true;    // 被系统中断则稍后重试
     }
 
-    /** 幂等排期：已有同 ID 任务就不重复添加。 */
+    /** 幂等排期：已有同 ID 任务就不重复添加。调用前需自行确认 API >= 21。 */
     public static void schedule(Context context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            return;     // 4.4 没有 JobScheduler，保持沉默即可
+        }
         JobScheduler js = (JobScheduler) context.getSystemService(Context.JOB_SCHEDULER_SERVICE);
         if (js == null) {
             Log.w(TAG, "no JobScheduler");
@@ -47,7 +54,8 @@ public class KeepJobService extends JobService {
         }
         JobInfo job = new JobInfo.Builder(JOB_ID, new ComponentName(context, KeepJobService.class))
                 .setPeriodic(15 * 60 * 1000L)
-                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                // 不加网络约束：写 Settings.Global 是纯本地操作，
+                // 加了 NETWORK_TYPE_ANY 会让待机/断网时整个任务不被调度。
                 .setPersisted(true)
                 .build();
         int r = js.schedule(job);
