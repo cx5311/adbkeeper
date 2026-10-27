@@ -58,10 +58,9 @@ public class StatusActivity extends Activity {
         root.addView(toggle, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.gravity = Gravity.START;
-        setContentView(root, lp);
+        // 电视屏幕上要撑满宽度，否则内容会缩在左上角一小块
+        setContentView(root, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
         KeepJobService.schedule(this);
         render(null);

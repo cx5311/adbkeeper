@@ -26,6 +26,9 @@
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <!-- 显式激活入口：首次安装后系统不会发任何广播给我们，用这条手动激活。
+                     adb shell am broadcast -a com.cx531.adbkeep.PING -->
+                <action android:name="com.cx531.adbkeep.PING" />
             </intent-filter>
         </receiver>
 

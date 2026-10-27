@@ -50,6 +50,10 @@ adb install adb-keeper-1.0.apk
 
 # 关键：授予签名级权限（安装时无法自动获得）
 adb shell pm grant com.cx531.adbkeep android.permission.WRITE_SECURE_SETTINGS
+
+# 首次安装后立即激活：注册周期任务并检查一次
+# （系统对首次安装的包不会发任何广播，必须显式唤醒一次）
+adb shell am broadcast -a com.cx531.adbkeep.PING
 ```
 
 需要 Android 7.0+（`minSdk 21`，但 `directBootAware` 相关逻辑在 24+ 更完整）。
@@ -61,6 +65,8 @@ adb shell pm grant com.cx531.adbkeep android.permission.WRITE_SECURE_SETTINGS
 ```bash
 adb shell am start -n com.cx531.adbkeep/.StatusActivity
 ```
+
+> 打开状态页也会注册周期任务。如果之前已经做过 `PING` 激活，则不需要再打开。
 
 状态页显示：写权限是否已授予、`adb_enabled` 当前值、自动恢复开关、最近一次检查/修复时间。
 

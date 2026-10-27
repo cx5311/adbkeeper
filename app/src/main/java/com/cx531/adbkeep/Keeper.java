@@ -56,7 +56,10 @@ public final class Keeper {
     }
 
     public static boolean hasPermission(Context c) {
-        return c.checkSelfPermission(android.Manifest.permission.WRITE_SECURE_SETTINGS)
+        // 用 PackageManager.checkPermission 而不是 Context.checkSelfPermission：
+        // 后者是 API 23 才加入的，minSdk 21 的设备上会 NoSuchMethodError。
+        return c.getPackageManager().checkPermission(
+                android.Manifest.permission.WRITE_SECURE_SETTINGS, c.getPackageName())
                 == PackageManager.PERMISSION_GRANTED;
     }
 
