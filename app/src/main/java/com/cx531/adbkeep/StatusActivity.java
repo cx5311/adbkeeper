@@ -31,7 +31,7 @@ public class StatusActivity extends Activity {
         root.setPadding(pad, pad, pad, pad);
 
         TextView title = new TextView(this);
-        title.setText("ADB Keeper");
+        title.setText("adbkeeper");
         title.setTextSize(20);
         root.addView(title);
 

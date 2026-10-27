@@ -1,4 +1,4 @@
-# ADB Keeper
+# adbkeeper
 
 **极简 Android 工具（14 KB）：让 `adb_enabled` 在重启、待机、异常之后自动恢复为开，把"远程救砖"这条路焊死。**
 
@@ -17,7 +17,7 @@
 
 但很多 ROM 会在**待机 / 关机 / 重启**时把 `Settings.Global.ADB_ENABLED` 清零。此时如果桌面恰好也坏了，没有任何界面能让你把 ADB 重新打开 —— 只能恢复出厂。
 
-**ADB Keeper 就是那个"始终把开关拨回去"的独立进程。**
+**adbkeeper 就是那个"始终把开关拨回去"的独立进程。**
 
 ## 工作原理
 
