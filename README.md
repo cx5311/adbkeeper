@@ -101,17 +101,22 @@ adb install -r adbkeeper-1.2.apk
 ## 验证是否生效
 
 ```bash
+# 0) 确认装的确实是 v1.2
+adb shell dumpsys package com.cx531.adbkeep | grep versionName
+
 # 1) 手动把开关清零（模拟 ROM 的行为）
 adb shell settings put global adb_enabled 0
 
-# 2) 立即触发一次（或等 15 分钟内的周期任务）
+# 2) 立即触发一次（Android 5.0+；4.4 没有 jobscheduler 命令，
+#    改用 am start 打开状态页点"立即检查"）
 adb shell cmd jobscheduler run -f com.cx531.adbkeep 1001
 
 # 3) 看是否被写回 1
 adb shell settings get global adb_enabled
 
-# 4) 确认 adbd 真的在监听（返回 5555 端口有内容即正常）
-adb shell netstat -tlnp 2>/dev/null | grep 5555 || adb shell cat /proc/net/tcp | head -20
+# 4) 确认 adbd 进程真的活着（running 即正常）
+adb shell getprop init.svc.adbd
+adb shell getprop persist.adb.tcp.port
 ```
 
 断电重启后再看一次，能连上即为生效。
@@ -134,12 +139,12 @@ adb logcat -s AdbKeeper
 
 ## 必须知道的局限
 
-- **它会强制打开 ADB。** 你手动关掉，它会在下一个周期（通常 15 分钟内）改回来。想彻底关闭：状态页停用总开关，或 `adb shell pm disable-user com.cx531.adbkeep`。
+- **它会强制打开 ADB。** 你手动关掉，它会在下一个周期（通常 15 分钟内）改回来。想彻底关闭：状态页停用总开关，或 `adb shell pm disable-user com.cx531.adbkeep`（恢复用 `adb shell pm enable com.cx531.adbkeep`），彻底不要了就 `adb uninstall com.cx531.adbkeep`。
 - **15 分钟是"尽力而为"。** 电视进入待机（Doze）后系统会放宽周期任务的调度，实际间隔可能是几十分钟到几小时。开机、解锁、升级这几个触发点是准时的。
 - **Android 4.4 / 4.4W 没有周期任务。** `JobScheduler` 是 API 21 才有的，这些设备上本应用只在**开机**和**升级**时检查一次，运行中被清零不会自动补。5.0 及以上功能完整。
 - **网络断了救不了。** ADB over TCP 依赖设备联网，WiFi 密码变更 / 路由器故障属于物理层问题。
 - **不解决 `system_server` 崩溃。** 那种情况 `adbd` 本身不存在。
-- **不修改 ADB 端口。** 依赖设备原本就能在 `persist.adb.tcp.port` 指定的端口上监听；端口没配好的设备，本应用不会自动重启 adbd（避免误伤 USB 调试）。
+- **不修改 ADB 端口。** 依赖设备原本就能在 `persist.adb.tcp.port` 指定的端口上监听。如果 `getprop persist.adb.tcp.port` 是空的，说明设备压根没开网络调试端口（只有 USB）——先用 USB 连上执行 `adb shell setprop persist.adb.tcp.port 5555` 再重启，本应用不会替你改这个值，也不会在端口未配置时自动重启 adbd（避免误伤 USB 调试）。
 - 需要 `WRITE_SECURE_SETTINGS`，所以**必须先用 ADB 授权一次**——这是个"鸡生蛋"约束，装之前请确保设备 ADB 可用。
 
 ## 常见问题
@@ -164,6 +169,9 @@ Android 11+ 的手机基本无效——那边是 `adb_wifi_enabled` + 随机 TLS
 
 **Q：会不会被系统杀掉？**
 它没有常驻进程可杀。系统每次广播或 Job 触发时才会拉起进程，执行完立刻结束。作业用 `setPersisted(true)`，跨重启保留。
+
+**Q：状态页会不会被别的应用偷偷打开？**
+能打开（`exported="true"`），但页面上的每个动作都需要屏幕上点一下才生效，没有任何后台入口，也读不到敏感数据。之所以不设成 `false`：那样 `am start` 会连 shell 一起拒绝，而它是唯一的状态查看与激活入口。
 
 ## 构建
 
